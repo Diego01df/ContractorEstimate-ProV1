@@ -7,7 +7,8 @@ import {
   X, Check, PenTool, ClipboardList,
   Loader2, Table, FileEdit, LayoutPanelLeft, ScrollText,
   Sparkles, Wand2, Eye, Printer, FolderOpen, DoorOpen,
-  TrendingUp, Camera, Image as ImageIcon
+  TrendingUp, Camera, Image as ImageIcon,
+  ArrowRight, Upload, ShieldCheck, Zap, Briefcase
 } from 'lucide-react';
 import { Project, Room, LineItem, CATEGORIES, DEFAULT_ROOMS, PAYMENT_TERMS, CATEGORY_DESCRIPTIONS } from './types';
 import * as geminiService from './services/geminiService';
@@ -550,10 +551,105 @@ const RoomCard: React.FC<RoomCardProps> = ({ room, onUpdate, onDelete, projectZi
     );
 };
 
+// --- Landing Page Component ---
+
+const LandingPage: React.FC<{ 
+    onStartNew: () => void, 
+    onImport: (e: React.ChangeEvent<HTMLInputElement>) => void 
+}> = ({ onStartNew, onImport }) => {
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    return (
+        <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 overflow-hidden relative">
+            {/* Background Orbs */}
+            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-50 rounded-full blur-[120px] -z-10 animate-pulse"></div>
+            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-green-50 rounded-full blur-[120px] -z-10 animate-pulse delay-1000"></div>
+
+            <div className="max-w-4xl w-full text-center space-y-12 animate-in fade-in zoom-in duration-700">
+                <div className="space-y-4">
+                    <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-full text-sm font-black tracking-widest uppercase shadow-xl mb-4">
+                        <PenTool size={16} />
+                        ContractorEstimate Pro
+                    </div>
+                    <h1 className="text-5xl md:text-7xl font-black text-slate-900 tracking-tighter leading-none">
+                        Precision Estimates <br />
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-green-500">
+                            Powered by AI.
+                        </span>
+                    </h1>
+                    <p className="text-slate-500 text-lg md:text-xl font-medium max-w-2xl mx-auto leading-relaxed">
+                        Transform your construction project management. Professional interior remodel tools with automated pricing, scope analysis, and instant documentation.
+                    </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-8">
+                    {/* New Project Card */}
+                    <button 
+                        onClick={onStartNew}
+                        className="group relative bg-white border-2 border-slate-100 p-8 rounded-[2rem] text-left hover:border-green-400 hover:shadow-2xl hover:shadow-green-100 transition-all duration-300"
+                    >
+                        <div className="w-16 h-16 bg-green-50 text-green-600 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-green-600 group-hover:text-white transition-colors">
+                            <Plus size={32} />
+                        </div>
+                        <h3 className="text-2xl font-black text-slate-900 mb-2">New Estimate</h3>
+                        <p className="text-slate-500 text-sm font-medium leading-relaxed mb-6">
+                            Start a fresh project from scratch. Utilize our smart space interpretation and category systems.
+                        </p>
+                        <div className="flex items-center gap-2 font-black text-green-600 group-hover:translate-x-2 transition-transform">
+                            Let's Build <ArrowRight size={20} />
+                        </div>
+                    </button>
+
+                    {/* Import Project Card */}
+                    <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="group relative bg-white border-2 border-slate-100 p-8 rounded-[2rem] text-left hover:border-blue-400 hover:shadow-2xl hover:shadow-blue-100 transition-all duration-300"
+                    >
+                        <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                            <Upload size={32} />
+                        </div>
+                        <h3 className="text-2xl font-black text-slate-900 mb-2">Import Project</h3>
+                        <p className="text-slate-500 text-sm font-medium leading-relaxed mb-6">
+                            Resume your work by uploading an existing project file. Supports all ContractorEstimate Pro .json formats.
+                        </p>
+                        <div className="flex items-center gap-2 font-black text-blue-600 group-hover:translate-x-2 transition-transform">
+                            Open File <FolderOpen size={20} />
+                        </div>
+                    </button>
+                    <input type="file" ref={fileInputRef} onChange={onImport} accept=".json" className="hidden" />
+                </div>
+
+                {/* Trust Badges / Features */}
+                <div className="pt-12 grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <div className="flex flex-col items-center gap-2">
+                        <div className="p-3 bg-slate-50 rounded-full text-slate-400">
+                            <ShieldCheck size={20} />
+                        </div>
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Confidential Reporting</span>
+                    </div>
+                    <div className="flex flex-col items-center gap-2">
+                        <div className="p-3 bg-slate-50 rounded-full text-slate-400">
+                            <Zap size={20} />
+                        </div>
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Real-time AI Pricing</span>
+                    </div>
+                    <div className="flex flex-col items-center gap-2">
+                        <div className="p-3 bg-slate-50 rounded-full text-slate-400">
+                            <Briefcase size={20} />
+                        </div>
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">White-Label Exports</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // --- Main App Component ---
 
 const App: React.FC = () => {
     const [project, setProject] = useState<Project | null>(null);
+    const [currentView, setCurrentView] = useState<'landing' | 'editor'>('landing');
     const [isLoading, setIsLoading] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const [showPreview, setShowPreview] = useState(false);
@@ -563,19 +659,7 @@ const App: React.FC = () => {
         const saved = localStorage.getItem('current_project');
         if (saved) {
             setProject(JSON.parse(saved));
-        } else {
-            setProject({
-                id: crypto.randomUUID(),
-                title: "New Estimate",
-                address: { street: "", city: "", state: "", zip: "" },
-                rooms: [],
-                contingencyPct: 10,
-                taxPct: 0,
-                discountPct: 0,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-                notes: ""
-            });
+            setCurrentView('editor');
         }
     }, []);
 
@@ -584,6 +668,39 @@ const App: React.FC = () => {
             localStorage.setItem('current_project', JSON.stringify(project));
         }
     }, [project]);
+
+    const startNewProject = () => {
+        const newProj: Project = {
+            id: crypto.randomUUID(),
+            title: "Untitled Estimate",
+            address: { street: "", city: "", state: "", zip: "" },
+            rooms: [],
+            contingencyPct: 10,
+            taxPct: 0,
+            discountPct: 0,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            notes: ""
+        };
+        setProject(newProj);
+        setCurrentView('editor');
+    };
+
+    const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const json = JSON.parse(event.target?.result as string);
+                setProject(json);
+                setCurrentView('editor');
+            } catch (err) {
+                alert("Error: Invalid project file.");
+            }
+        };
+        reader.readAsText(file);
+    };
 
     const addRoom = (name: string = "New Space") => {
         if (!project) return;
@@ -633,21 +750,9 @@ const App: React.FC = () => {
         downloadAnchorNode.remove();
     };
 
-    const handleLoadJson = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            try {
-                const json = JSON.parse(event.target?.result as string);
-                setProject(json);
-                if (fileInputRef.current) fileInputRef.current.value = '';
-            } catch (err) {
-                alert("Error: Invalid project file.");
-            }
-        };
-        reader.readAsText(file);
-    };
+    if (currentView === 'landing') {
+        return <LandingPage onStartNew={startNewProject} onImport={handleImport} />;
+    }
 
     if (!project) return null;
 
@@ -677,13 +782,13 @@ const App: React.FC = () => {
     const formatPrice = (n: number) => `$${n.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 
     return (
-        <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+        <div className="min-h-screen bg-[#F8FAFC] text-slate-900 animate-in fade-in slide-in-from-bottom-2 duration-500">
             <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-100 shadow-sm">
                 <div className="max-w-7xl mx-auto px-4 h-20 flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                        <div className="bg-slate-900 p-2.5 rounded-xl shadow-lg">
+                        <button onClick={() => setCurrentView('landing')} className="bg-slate-900 p-2.5 rounded-xl shadow-lg hover:scale-105 transition-transform">
                             <PenTool className="text-white" size={24} />
-                        </div>
+                        </button>
                         <div>
                             <input 
                                 className="text-xl font-black bg-transparent border-none focus:ring-0 p-0 text-slate-800"
@@ -703,24 +808,11 @@ const App: React.FC = () => {
                     </div>
                     
                     <div className="flex items-center gap-3">
-                        <input 
-                            type="file" 
-                            ref={fileInputRef} 
-                            onChange={handleLoadJson} 
-                            accept=".json" 
-                            className="hidden" 
-                        />
                         <button 
                             onClick={() => addRoom()}
                             className="bg-green-600 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 font-black text-sm shadow-xl shadow-green-100 hover:bg-green-700 transition-all hover:scale-[1.02] active:scale-95 duration-200"
                         >
                             <Plus size={20} /> Add New Room
-                        </button>
-                        <button 
-                            onClick={() => fileInputRef.current?.click()}
-                            className="p-3 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-xl flex items-center gap-2 font-bold text-sm transition-colors"
-                        >
-                            <FolderOpen size={20} /> Open
                         </button>
                         <button 
                             onClick={() => setShowPreview(true)}
