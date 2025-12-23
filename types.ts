@@ -7,8 +7,8 @@ export interface LineItem {
   quantity: number;
   unitPrice: number; 
   laborRate: number; 
-  ecoProfit: number; // Internal profit margin (%)
   markup: number; 
+  ecoProfit: number; // Restored per-item profit
   notes: string;
   paymentDue: string;
 }

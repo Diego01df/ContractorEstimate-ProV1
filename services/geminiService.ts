@@ -117,6 +117,7 @@ export async function analyzeScopeAndGenerateItems(scopeText: string, roomName: 
        - quantity: number
        - unitPrice: number (material cost)
        - laborRate: number (labor cost)
+       - ecoProfit: 20
        - markup: 0
        - notes: string
        - paymentDue: (One of: ${PAYMENT_TERMS.join(', ')})

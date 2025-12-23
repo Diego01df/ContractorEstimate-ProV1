@@ -8,7 +8,7 @@ import {
   Loader2, Table, FileEdit, LayoutPanelLeft, ScrollText,
   Sparkles, Wand2, Eye, Printer, FolderOpen, DoorOpen,
   TrendingUp, Camera, Image as ImageIcon,
-  ArrowRight, Upload, ShieldCheck, Zap, Briefcase
+  ArrowRight, Upload, ShieldCheck, Zap, Briefcase, History
 } from 'lucide-react';
 import { Project, Room, LineItem, CATEGORIES, DEFAULT_ROOMS, PAYMENT_TERMS, CATEGORY_DESCRIPTIONS } from './types';
 import * as geminiService from './services/geminiService';
@@ -16,12 +16,17 @@ import * as exportService from './services/exportService';
 
 // --- Helper Components ---
 
-const Modal = ({ title, onClose, children, maxWidth = "max-w-3xl" }: { title: string, onClose: () => void, children: React.ReactNode, maxWidth?: string }) => (
-  <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-    <div className={`bg-white rounded-2xl shadow-2xl w-full ${maxWidth} max-h-[90vh] overflow-y-auto border border-gray-100`}>
-      <div className="flex justify-between items-center p-6 border-b border-gray-100">
+const Modal: React.FC<{ 
+  title: string; 
+  onClose: () => void; 
+  children: React.ReactNode; 
+  maxWidth?: string; 
+}> = ({ title, onClose, children, maxWidth = "max-w-3xl" }) => (
+  <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in duration-300">
+    <div className={`bg-white rounded-[2rem] shadow-2xl w-full ${maxWidth} max-h-[90vh] overflow-y-auto border border-slate-100 animate-in zoom-in-95 duration-200`}>
+      <div className="flex justify-between items-center p-6 border-b border-slate-50">
         <h3 className="text-xl font-bold text-slate-800">{title}</h3>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors bg-gray-50 hover:bg-gray-100 p-2 rounded-full">
+        <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors bg-slate-50 hover:bg-slate-100 p-2 rounded-full">
             <X size={20} />
         </button>
       </div>
@@ -30,43 +35,6 @@ const Modal = ({ title, onClose, children, maxWidth = "max-w-3xl" }: { title: st
   </div>
 );
 
-// --- Image Processing Utility ---
-
-const resizeAndCropToSquare = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const img = new Image();
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                const size = 600; // Target square resolution
-                canvas.width = size;
-                canvas.height = size;
-                const ctx = canvas.getContext('2d');
-                if (!ctx) return reject('No context');
-
-                let sx, sy, sWidth, sHeight;
-                if (img.width > img.height) {
-                    sHeight = img.height;
-                    sWidth = img.height;
-                    sx = (img.width - img.height) / 2;
-                    sy = 0;
-                } else {
-                    sWidth = img.width;
-                    sHeight = img.width;
-                    sx = 0;
-                    sy = (img.height - img.width) / 2;
-                }
-
-                ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, size, size);
-                resolve(canvas.toDataURL('image/jpeg', 0.8));
-            };
-            img.src = e.target?.result as string;
-        };
-        reader.readAsDataURL(file);
-    });
-};
-
 // --- Sub Components ---
 
 interface RoomCardProps {
@@ -74,7 +42,6 @@ interface RoomCardProps {
     onUpdate: (r: Room) => void;
     onDelete: () => void;
     projectZip: string;
-    apiKey: string;
 }
 
 const RoomCard: React.FC<RoomCardProps> = ({ room, onUpdate, onDelete, projectZip }) => {
@@ -84,7 +51,6 @@ const RoomCard: React.FC<RoomCardProps> = ({ room, onUpdate, onDelete, projectZi
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [isEditingName, setIsEditingName] = useState(false);
     const [tempName, setTempName] = useState(room.name);
-    const photoInputRef = useRef<HTMLInputElement>(null);
     
     const [editingItemIds, setEditingItemIds] = useState<Set<string>>(new Set());
     const [newItem, setNewItem] = useState<Partial<LineItem>>({ 
@@ -94,7 +60,7 @@ const RoomCard: React.FC<RoomCardProps> = ({ room, onUpdate, onDelete, projectZi
         unit: 'ea', 
         unitPrice: 0, 
         laborRate: 0, 
-        ecoProfit: 20, 
+        ecoProfit: 20,
         markup: 0, 
         paymentDue: PAYMENT_TERMS[0]
     });
@@ -135,7 +101,7 @@ const RoomCard: React.FC<RoomCardProps> = ({ room, onUpdate, onDelete, projectZi
             unitPrice: Number(newItem.unitPrice), 
             laborRate: Number(newItem.laborRate), 
             ecoProfit: Number(newItem.ecoProfit || 20),
-            markup: Number(newItem.markup), 
+            markup: Number(newItem.markup || 0), 
             notes: '',
             paymentDue: newItem.paymentDue || PAYMENT_TERMS[0]
         };
@@ -165,18 +131,6 @@ const RoomCard: React.FC<RoomCardProps> = ({ room, onUpdate, onDelete, projectZi
         });
     };
 
-    const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            try {
-                const resized = await resizeAndCropToSquare(file);
-                onUpdate({ ...room, photo: resized });
-            } catch (err) {
-                console.error("Photo error", err);
-            }
-        }
-    };
-
     const handleAnalyzeScope = async () => {
         if (!room.scopeOfWork) return;
         setIsAnalyzing(true);
@@ -185,8 +139,7 @@ const RoomCard: React.FC<RoomCardProps> = ({ room, onUpdate, onDelete, projectZi
             if (items && items.length > 0) {
                 const newItems = items.map((it: any) => ({
                     ...it,
-                    id: crypto.randomUUID(),
-                    ecoProfit: 20
+                    id: crypto.randomUUID()
                 }));
                 onUpdate({ ...room, items: [...room.items, ...newItems] });
                 setActiveSubTab('items');
@@ -197,221 +150,145 @@ const RoomCard: React.FC<RoomCardProps> = ({ room, onUpdate, onDelete, projectZi
     };
 
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-6">
-            <div className="p-4 bg-slate-50 flex items-center justify-between border-b border-gray-100">
-                <div className="flex items-center gap-3">
-                    <button onClick={() => setIsExpanded(!isExpanded)} className="text-gray-500 hover:text-slate-800 transition-colors">
-                        {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden mb-8 transition-all hover:shadow-xl hover:border-brand-200/50">
+            <div className="p-6 bg-slate-50/50 flex items-center justify-between border-b border-slate-100">
+                <div className="flex items-center gap-6">
+                    <button 
+                        onClick={() => setIsExpanded(!isExpanded)} 
+                        className="w-12 h-12 flex items-center justify-center rounded-2xl bg-white shadow-sm border border-slate-200 text-slate-400 hover:text-slate-900 transition-all hover:scale-105 active:scale-95"
+                    >
+                        {isExpanded ? <ChevronDown size={24} /> : <ChevronRight size={24} />}
                     </button>
                     
-                    <div className="flex items-center gap-2">
-                        {room.photo ? (
-                            <div className="relative group/photo cursor-pointer" onClick={() => photoInputRef.current?.click()}>
-                                <img src={room.photo} className="w-10 h-10 rounded-lg object-cover border border-gray-200" alt="Room" />
-                                <div className="absolute inset-0 bg-black/40 rounded-lg opacity-0 group-hover/photo:opacity-100 flex items-center justify-center transition-opacity">
-                                    <Camera size={14} className="text-white" />
-                                </div>
-                            </div>
-                        ) : (
-                            <button 
-                                onClick={() => photoInputRef.current?.click()}
-                                className="w-10 h-10 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 hover:text-slate-600 hover:border-gray-400 transition-all"
-                                title="Add space photo"
-                            >
-                                <Camera size={18} />
-                            </button>
-                        )}
-                        <input type="file" ref={photoInputRef} onChange={handlePhotoUpload} accept="image/*" className="hidden" />
-                    </div>
-
                     {isEditingName ? (
                         <form onSubmit={handleSaveName} className="flex items-center gap-2">
                             <input 
                                 autoFocus
-                                className="bg-white border border-gray-200 rounded px-2 py-1 text-lg font-bold text-slate-800 outline-none focus:ring-2 focus:ring-slate-900"
+                                className="bg-white border border-brand-300 rounded-2xl px-5 py-3 text-xl font-bold text-slate-900 outline-none focus:ring-4 focus:ring-brand-500/10 transition-all"
                                 value={tempName}
                                 onChange={(e) => setTempName(e.target.value)}
                                 onBlur={() => handleSaveName()}
                             />
-                            <button type="submit" className="text-green-600 hover:text-green-700">
-                                <Check size={20} />
+                            <button type="submit" className="text-white bg-green-600 p-3 rounded-2xl shadow-xl shadow-green-100 hover:bg-green-700 transition-all">
+                                <Check size={20} strokeWidth={3} />
                             </button>
                         </form>
                     ) : (
-                        <div className="flex items-center gap-2 group">
-                            <h4 className="font-bold text-slate-800 text-lg">{room.name}</h4>
+                        <div className="flex items-center gap-5 group">
+                            <h4 className="font-extrabold text-slate-900 text-2xl tracking-tighter leading-none">{room.name}</h4>
                             <button 
                                 onClick={() => setIsEditingName(true)}
-                                className="text-slate-400 hover:text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                                className="text-slate-300 hover:text-brand-600 opacity-0 group-hover:opacity-100 transition-all translate-y-0.5"
                             >
-                                <Edit2 size={16} />
+                                <Edit2 size={20} />
                             </button>
                         </div>
                     )}
                     
-                    <span className="bg-white px-2 py-0.5 rounded-full text-xs font-semibold text-slate-500 border border-gray-200">
-                        {room.items.length} items
-                    </span>
-                </div>
-                <div className="flex items-center gap-4">
-                    <div className="text-right">
-                        <div className="text-xs text-gray-500 uppercase tracking-wider font-bold">Room Total</div>
-                        <div className="text-lg font-black text-slate-900">${roomTotal.toLocaleString()}</div>
+                    <div className="hidden sm:flex items-center gap-2 px-4 py-1.5 bg-brand-50 rounded-full border border-brand-100">
+                        <Zap size={14} className="text-brand-500" />
+                        <span className="text-[11px] font-black text-brand-700 uppercase tracking-widest leading-none pt-0.5">
+                            {room.items.length} Work Items
+                        </span>
                     </div>
-                    <button onClick={onDelete} className="text-red-400 hover:text-red-600 p-2 hover:bg-red-50 rounded-lg transition-colors">
-                        <Trash2 size={18} />
+                </div>
+                <div className="flex items-center gap-10">
+                    <div className="text-right">
+                        <div className="text-[10px] text-slate-400 uppercase tracking-[0.2em] font-black mb-1.5">Area Estimated Value</div>
+                        <div className="text-2xl font-black text-slate-900 tracking-tighter">${roomTotal.toLocaleString()}</div>
+                    </div>
+                    <button onClick={onDelete} className="text-slate-300 hover:text-red-500 p-4 hover:bg-red-50 rounded-[1.5rem] transition-all">
+                        <Trash2 size={24} />
                     </button>
                 </div>
             </div>
 
             {isExpanded && (
-                <div className="p-4">
-                    <div className="flex gap-1 mb-6 bg-gray-100/50 p-1 rounded-xl w-fit">
+                <div className="p-10">
+                    <div className="flex gap-4 mb-12 bg-slate-100/60 p-2 rounded-2xl w-fit">
                         <button 
                             onClick={() => setActiveSubTab('items')}
-                            className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeSubTab === 'items' ? 'bg-white text-slate-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            className={`px-8 py-3.5 rounded-xl text-xs font-black flex items-center gap-3 transition-all ${activeSubTab === 'items' ? 'bg-white text-slate-900 shadow-xl' : 'text-slate-500 hover:text-slate-900'}`}
                         >
-                            <Table size={16} />
-                            Line Items
+                            <Table size={18} />
+                            ITEMIZED ESTIMATE
                         </button>
                         <button 
                             onClick={() => setActiveSubTab('scope')}
-                            className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeSubTab === 'scope' ? 'bg-white text-slate-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            className={`px-8 py-3.5 rounded-xl text-xs font-black flex items-center gap-3 transition-all ${activeSubTab === 'scope' ? 'bg-white text-slate-900 shadow-xl' : 'text-slate-500 hover:text-slate-900'}`}
                         >
-                            <ScrollText size={16} />
-                            Scope of Work
+                            <ScrollText size={18} />
+                            SPECIFICATIONS
                         </button>
                     </div>
 
                     {activeSubTab === 'items' ? (
-                        <div className="space-y-4">
-                            <div className="rounded-lg border border-gray-100 overflow-hidden">
+                        <div className="space-y-8 animate-in fade-in duration-500">
+                            <div className="rounded-[2.5rem] border border-slate-100 overflow-hidden shadow-sm bg-white">
                                 <table className="w-full text-left border-collapse table-fixed">
-                                    <thead className="bg-slate-50 text-slate-600 text-[9px] uppercase tracking-wider font-bold border-b border-gray-100">
+                                    <thead className="bg-slate-50/80 text-slate-400 text-[10px] uppercase tracking-[0.2em] font-black border-b border-slate-100">
                                         <tr>
-                                            <th className="p-2 w-[12%]">Category</th>
-                                            <th className="p-2 w-[22%]">Description</th>
-                                            <th className="p-2 w-[8%]">Qty/U</th>
-                                            <th className="p-2 w-[7%]">Mat $</th>
-                                            <th className="p-2 w-[7%]">Lab $</th>
-                                            <th className="p-2 w-[7%] text-green-700">ECO %</th>
-                                            <th className="p-2 w-[14%]">Payment</th>
-                                            <th className="p-2 w-[9%] text-right">Total</th>
-                                            <th className="p-2 w-[14%] text-center">Actions</th>
+                                            <th className="p-6 w-[20%]">Category</th>
+                                            <th className="p-6 w-[30%]">Work Description</th>
+                                            <th className="p-6 w-[12%]">Quantity</th>
+                                            <th className="p-6 w-[12%] text-right">Unit Rate</th>
+                                            <th className="p-6 w-[12%] text-right">Total</th>
+                                            <th className="p-6 w-[14%] text-center">Actions</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-gray-50">
+                                    <tbody className="divide-y divide-slate-50">
                                         {room.items.map(item => {
                                             const total = calcItemTotal(item);
                                             const isEditing = editingItemIds.has(item.id);
                                             return (
-                                                <tr key={item.id} className="group hover:bg-slate-50/50 transition-colors">
-                                                    <td className="p-2 align-top">
+                                                <tr key={item.id} className="group hover:bg-slate-50/40 transition-colors">
+                                                    <td className="p-6 align-top">
                                                         {isEditing ? (
                                                             <select 
-                                                                className="w-full bg-white border border-gray-200 rounded p-1 text-[9px] focus:ring-2 focus:ring-slate-900 outline-none appearance-none"
+                                                                className="w-full bg-white border border-slate-200 rounded-2xl p-3 text-xs focus:ring-4 focus:ring-brand-500/10 outline-none transition-all"
                                                                 value={item.category}
                                                                 onChange={(e) => handleUpdateItem(item.id, { category: e.target.value })}
                                                             >
                                                                 {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                                                             </select>
                                                         ) : (
-                                                            <div className="font-bold text-slate-800 text-[9px] truncate" title={item.category}>{item.category}</div>
+                                                            <div className="font-bold text-slate-900 text-xs truncate py-1 uppercase tracking-tight" title={item.category}>{item.category}</div>
                                                         )}
                                                     </td>
-                                                    <td className="p-2 align-top">
+                                                    <td className="p-6 align-top">
                                                         {isEditing ? (
                                                             <textarea 
                                                                 rows={2}
-                                                                className="w-full bg-white border border-gray-200 rounded p-1 text-[9px] focus:ring-2 focus:ring-slate-900 outline-none resize-none"
+                                                                className="w-full bg-white border border-slate-200 rounded-2xl p-3 text-xs focus:ring-4 focus:ring-brand-500/10 outline-none resize-none transition-all"
                                                                 value={item.description}
                                                                 onChange={(e) => handleUpdateItem(item.id, { description: e.target.value })}
-                                                                placeholder="Details..."
                                                             />
                                                         ) : (
-                                                            <div className="text-slate-600 text-[9px] leading-relaxed break-words line-clamp-2" title={item.description}>{item.description}</div>
+                                                            <div className="text-slate-500 text-xs leading-relaxed line-clamp-2 italic" title={item.description}>{item.description}</div>
                                                         )}
                                                     </td>
-                                                    <td className="p-2 align-top">
-                                                        {isEditing ? (
-                                                            <div className="flex flex-col gap-1">
-                                                                <input 
-                                                                    type="number" className="w-full bg-white border border-gray-200 rounded p-1 text-[9px]"
-                                                                    value={item.quantity} onChange={(e) => handleUpdateItem(item.id, { quantity: Number(e.target.value) })}
-                                                                />
-                                                                <input 
-                                                                    type="text" className="w-full bg-white border border-gray-200 rounded p-1 text-[8px]"
-                                                                    value={item.unit} onChange={(e) => handleUpdateItem(item.id, { unit: e.target.value })}
-                                                                />
-                                                            </div>
-                                                        ) : (
-                                                            <div className="text-slate-600 text-[9px] font-medium truncate">{item.quantity} {item.unit}</div>
-                                                        )}
+                                                    <td className="p-6 align-top">
+                                                        <div className="text-slate-900 text-xs font-black py-1 uppercase tracking-wider">{item.quantity} <span className="text-slate-400 font-bold">{item.unit}</span></div>
                                                     </td>
-                                                    <td className="p-2 align-top">
-                                                        {isEditing ? (
-                                                            <input 
-                                                                type="number" className="w-full bg-white border border-gray-200 rounded p-1 text-[9px]"
-                                                                value={item.unitPrice} onChange={(e) => handleUpdateItem(item.id, { unitPrice: Number(e.target.value) })}
-                                                            />
-                                                        ) : (
-                                                            <div className="text-slate-600 text-[9px]">${item.unitPrice.toFixed(0)}</div>
-                                                        )}
+                                                    <td className="p-6 text-right align-top">
+                                                        <div className="text-slate-500 text-xs py-1 font-medium">${(item.unitPrice + (item.laborRate || 0)).toFixed(0)}</div>
                                                     </td>
-                                                    <td className="p-2 align-top">
-                                                        {isEditing ? (
-                                                            <input 
-                                                                type="number" className="w-full bg-white border border-gray-200 rounded p-1 text-[9px]"
-                                                                value={item.laborRate} onChange={(e) => handleUpdateItem(item.id, { laborRate: Number(e.target.value) })}
-                                                            />
-                                                        ) : (
-                                                            <div className="text-slate-600 text-[9px]">${item.laborRate?.toFixed(0)}</div>
-                                                        )}
+                                                    <td className="p-6 text-right align-top">
+                                                        <div className="font-black text-slate-900 text-sm py-1 tracking-tight">${total.toLocaleString()}</div>
                                                     </td>
-                                                    <td className="p-2 align-top">
-                                                        <div className="flex items-center gap-0.5">
-                                                            <input 
-                                                                type="number" 
-                                                                className="w-full bg-white border border-green-100 rounded p-0.5 text-[9px] text-green-700 font-bold focus:ring-1 focus:ring-green-500 outline-none"
-                                                                value={item.ecoProfit} 
-                                                                onChange={(e) => handleUpdateItem(item.id, { ecoProfit: Number(e.target.value) })}
-                                                            />
-                                                            <span className="text-[7px] text-green-500 font-bold">%</span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="p-2 align-top">
-                                                        {isEditing ? (
-                                                            <select 
-                                                                className="w-full bg-white border border-gray-200 rounded p-1 text-[9px] focus:ring-2 focus:ring-slate-900 outline-none appearance-none"
-                                                                value={item.paymentDue}
-                                                                onChange={(e) => handleUpdateItem(item.id, { paymentDue: e.target.value })}
-                                                            >
-                                                                {PAYMENT_TERMS.map(term => <option key={term} value={term}>{term}</option>)}
-                                                            </select>
-                                                        ) : (
-                                                            <div className="text-slate-500 text-[8px] leading-tight font-medium uppercase line-clamp-2">{item.paymentDue}</div>
-                                                        )}
-                                                    </td>
-                                                    <td className="p-2 text-right align-top">
-                                                        <div className="font-black text-slate-900 text-[10px] truncate">${total.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
-                                                    </td>
-                                                    <td className="p-2 align-top">
-                                                        <div className="flex items-center justify-center gap-1">
+                                                    <td className="p-6 align-top">
+                                                        <div className="flex items-center justify-center gap-3">
                                                             <button 
                                                                 onClick={() => toggleEdit(item.id)} 
-                                                                className={`flex items-center gap-1 p-1 rounded transition-all ${isEditing ? 'bg-green-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-900 hover:bg-slate-100'}`}
-                                                                title={isEditing ? 'Save changes' : 'Edit item'}
+                                                                className={`p-3 rounded-2xl transition-all ${isEditing ? 'bg-brand-600 text-white shadow-xl shadow-brand-100' : 'text-slate-300 hover:text-slate-900 hover:bg-slate-100'}`}
                                                             >
-                                                                {isEditing ? <Check size={14} /> : <Edit2 size={14} />}
-                                                                <span className="text-[8px] font-bold uppercase">{isEditing ? 'Save' : 'Edit'}</span>
+                                                                {isEditing ? <Check size={20} strokeWidth={3} /> : <Edit2 size={20} />}
                                                             </button>
                                                             <button 
                                                                 onClick={() => handleDeleteItem(item.id)} 
-                                                                className="flex items-center gap-1 p-1 rounded text-red-300 hover:text-red-500 hover:bg-red-50 transition-all"
-                                                                title="Delete item"
+                                                                className="p-3 rounded-2xl text-slate-200 hover:text-red-500 hover:bg-red-50 transition-all"
                                                             >
-                                                                <Trash2 size={14} />
-                                                                <span className="text-[8px] font-bold uppercase">Del</span>
+                                                                <Trash2 size={20} />
                                                             </button>
                                                         </div>
                                                     </td>
@@ -425,122 +302,95 @@ const RoomCard: React.FC<RoomCardProps> = ({ room, onUpdate, onDelete, projectZi
                             {!showAddItem ? (
                                 <button 
                                     onClick={() => setShowAddItem(true)}
-                                    className="flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-slate-900 transition-colors w-full justify-center p-3 border-2 border-dashed border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50"
+                                    className="flex items-center gap-4 text-sm font-black text-slate-300 hover:text-brand-600 transition-all w-full justify-center py-8 border-4 border-dashed border-slate-100 rounded-[2.5rem] hover:border-brand-200 hover:bg-brand-50/50 mt-8 group active:scale-[0.99]"
                                 >
-                                    <Plus size={16} /> Add Line Item
+                                    <Plus size={24} strokeWidth={4} className="group-hover:scale-110 transition-transform" /> START NEW LINE ITEM
                                 </button>
                             ) : (
-                                <div className="bg-white p-4 rounded-xl border border-slate-200 animate-in slide-in-from-top-2 duration-200 shadow-sm">
-                                    <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                                <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-[0_40px_80px_-20px_rgba(0,0,0,0.1)] animate-in slide-in-from-top-10 duration-500 mt-8 border-brand-100 relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 w-32 h-32 bg-brand-50 rounded-bl-[4rem] -z-0 opacity-40"></div>
+                                    <div className="grid grid-cols-1 md:grid-cols-12 gap-8 relative z-10">
                                         <div className="md:col-span-4">
-                                            <label className="block text-[9px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Category</label>
+                                            <label className="block text-[10px] font-black text-slate-400 mb-4 uppercase tracking-[0.2em]">Structural Category</label>
                                             <select 
-                                                className="w-full bg-white border border-gray-200 rounded-lg p-2 text-xs focus:ring-2 focus:ring-slate-900 outline-none appearance-none"
+                                                className="w-full bg-slate-50/50 border border-slate-200 rounded-[1.25rem] p-5 text-sm font-bold focus:ring-4 focus:ring-brand-500/10 outline-none transition-all"
                                                 value={newItem.category}
-                                                onChange={(e) => {
-                                                    const cat = e.target.value;
-                                                    setNewItem({ 
-                                                        ...newItem, 
-                                                        category: cat,
-                                                        description: CATEGORY_DESCRIPTIONS[cat] || '' 
-                                                    });
-                                                }}
+                                                onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
                                             >
                                                 {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                                             </select>
                                         </div>
-                                        <div className="md:col-span-6">
-                                            <label className="block text-[9px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Work Description</label>
+                                        <div className="md:col-span-8">
+                                            <label className="block text-[10px] font-black text-slate-400 mb-4 uppercase tracking-[0.2em]">Work Specification</label>
                                             <input 
-                                                className="w-full bg-white border border-gray-200 rounded-lg p-2 text-xs focus:ring-2 focus:ring-slate-900 outline-none"
+                                                className="w-full bg-slate-50/50 border border-slate-200 rounded-[1.25rem] p-5 text-sm font-bold focus:ring-4 focus:ring-brand-500/10 outline-none transition-all"
                                                 value={newItem.description}
                                                 onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
-                                                placeholder="Describe specific work..."
-                                            />
-                                        </div>
-                                        <div className="md:col-span-2">
-                                            <label className="block text-[9px] font-bold text-green-600 mb-1 uppercase tracking-wider">ECO Profit %</label>
-                                            <input 
-                                                type="number" className="w-full bg-white border border-green-200 rounded-lg p-2 text-xs text-green-700 font-bold focus:ring-2 focus:ring-green-500 outline-none"
-                                                value={newItem.ecoProfit} onChange={(e) => setNewItem({ ...newItem, ecoProfit: Number(e.target.value) })}
+                                                placeholder="Detail the materials and labor required..."
                                             />
                                         </div>
                                         <div className="md:col-span-3">
-                                            <label className="block text-[9px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Payment Due</label>
-                                            <select 
-                                                className="w-full bg-white border border-gray-200 rounded-lg p-2 text-xs focus:ring-2 focus:ring-slate-900 outline-none appearance-none"
-                                                value={newItem.paymentDue}
-                                                onChange={(e) => setNewItem({ ...newItem, paymentDue: e.target.value })}
-                                            >
-                                                {PAYMENT_TERMS.map(t => <option key={t} value={t}>{t}</option>)}
-                                            </select>
-                                        </div>
-                                        <div className="md:col-span-3">
-                                            <label className="block text-[9px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Qty / Unit</label>
-                                            <div className="flex gap-1">
+                                            <label className="block text-[10px] font-black text-slate-400 mb-4 uppercase tracking-[0.2em]">Qty & Unit</label>
+                                            <div className="flex gap-4">
                                                 <input 
-                                                    type="number" className="w-full bg-white border border-gray-200 rounded-lg p-2 text-xs"
+                                                    type="number" className="w-full bg-slate-50/50 border border-slate-200 rounded-[1.25rem] p-5 text-sm font-black"
                                                     value={newItem.quantity} onChange={(e) => setNewItem({ ...newItem, quantity: Number(e.target.value) })}
                                                 />
                                                 <input 
-                                                    type="text" className="w-20 bg-white border border-gray-200 rounded-lg p-2 text-[10px]"
+                                                    type="text" className="w-32 bg-slate-50/50 border border-slate-200 rounded-[1.25rem] p-5 text-sm uppercase tracking-widest font-black text-slate-400 text-center"
                                                     value={newItem.unit} onChange={(e) => setNewItem({ ...newItem, unit: e.target.value })}
                                                 />
                                             </div>
                                         </div>
                                         <div className="md:col-span-3">
-                                            <label className="block text-[9px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Material $</label>
+                                            <label className="block text-[10px] font-black text-slate-400 mb-4 uppercase tracking-[0.2em]">Material $</label>
                                             <input 
-                                                type="number" className="w-full bg-white border border-gray-200 rounded-lg p-2 text-xs"
+                                                type="number" className="w-full bg-slate-50/50 border border-slate-200 rounded-[1.25rem] p-5 text-sm font-black"
                                                 value={newItem.unitPrice} onChange={(e) => setNewItem({ ...newItem, unitPrice: Number(e.target.value) })}
                                             />
                                         </div>
                                         <div className="md:col-span-3">
-                                            <label className="block text-[9px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Labor $</label>
+                                            <label className="block text-[10px] font-black text-slate-400 mb-4 uppercase tracking-[0.2em]">Labor $</label>
                                             <input 
-                                                type="number" className="w-full bg-white border border-gray-200 rounded-lg p-2 text-xs"
+                                                type="number" className="w-full bg-slate-50/50 border border-slate-200 rounded-[1.25rem] p-5 text-sm font-black"
                                                 value={newItem.laborRate} onChange={(e) => setNewItem({ ...newItem, laborRate: Number(e.target.value) })}
                                             />
                                         </div>
+                                        <div className="md:col-span-3">
+                                            <label className="block text-[10px] font-black text-green-600 mb-4 uppercase tracking-[0.2em]">Profit Margin %</label>
+                                            <input 
+                                                type="number" className="w-full bg-green-50/50 border border-green-200 rounded-[1.25rem] p-5 text-sm font-black text-green-700 focus:ring-4 focus:ring-green-500/10 outline-none transition-all shadow-inner"
+                                                value={newItem.ecoProfit} onChange={(e) => setNewItem({ ...newItem, ecoProfit: Number(e.target.value) })}
+                                            />
+                                        </div>
                                     </div>
-                                    <div className="mt-4 flex justify-end gap-3">
-                                        <button onClick={() => setShowAddItem(false)} className="px-4 py-1.5 text-xs font-bold text-gray-500 hover:text-gray-700">Cancel</button>
-                                        <button onClick={handleAddItem} className="bg-slate-900 text-white px-5 py-1.5 rounded-lg text-xs font-bold shadow-lg shadow-slate-200 hover:bg-slate-800 transition-all flex items-center gap-2">
-                                            <Plus size={14} /> Save Item
+                                    <div className="mt-12 flex justify-end gap-6 relative z-10">
+                                        <button onClick={() => setShowAddItem(false)} className="px-10 py-4 text-sm font-black text-slate-400 hover:text-slate-900 transition-colors uppercase tracking-widest">CANCEL</button>
+                                        <button onClick={handleAddItem} className="bg-slate-900 text-white px-12 py-4 rounded-[1.25rem] text-xs font-black shadow-2xl hover:bg-brand-600 transition-all flex items-center gap-4 tracking-[0.2em] uppercase active:scale-95">
+                                            <Save size={20} strokeWidth={2.5} /> ADD LINE ITEM
                                         </button>
                                     </div>
                                 </div>
                             )}
                         </div>
                     ) : (
-                        <div className="space-y-4">
+                        <div className="space-y-8 animate-in fade-in duration-500">
                             <div className="relative">
                                 <textarea 
-                                    className="w-full bg-white border border-gray-200 rounded-xl p-4 text-sm min-h-[160px] focus:ring-2 focus:ring-slate-900 outline-none placeholder:text-gray-300 shadow-sm"
-                                    placeholder={`Describe the work to be done in the ${room.name}...`}
+                                    className="w-full bg-slate-50/50 border border-slate-200 rounded-[3rem] p-10 text-sm min-h-[300px] focus:ring-4 focus:ring-brand-500/10 outline-none placeholder:text-slate-300 shadow-inner leading-loose transition-all"
+                                    placeholder={`Describe the architectural vision for ${room.name}...`}
                                     value={room.scopeOfWork}
                                     onChange={(e) => onUpdate({ ...room, scopeOfWork: e.target.value })}
                                 />
-                                <div className="absolute bottom-4 right-4 flex gap-2">
+                                <div className="absolute bottom-10 right-10 flex gap-5">
                                     <button 
                                         disabled={!room.scopeOfWork || isAnalyzing}
                                         onClick={handleAnalyzeScope}
-                                        className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="bg-brand-600 text-white px-10 py-5 rounded-[1.5rem] text-xs font-black shadow-2xl shadow-brand-200 hover:bg-brand-700 transition-all flex items-center gap-4 disabled:opacity-50 uppercase tracking-[0.2em]"
                                     >
-                                        {isAnalyzing ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                                        Analyze for {room.name}
+                                        {isAnalyzing ? <Loader2 size={24} className="animate-spin" /> : <Sparkles size={24} strokeWidth={2.5} />}
+                                        ANALYZE WITH AI
                                     </button>
-                                </div>
-                            </div>
-                            <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100 flex gap-3">
-                                <div className="p-2 bg-white rounded-lg h-fit shadow-sm">
-                                    <Wand2 size={18} className="text-indigo-600" />
-                                </div>
-                                <div>
-                                    <h5 className="font-bold text-indigo-900 text-sm">Smart Space Interpretation</h5>
-                                    <p className="text-indigo-700 text-xs mt-1 leading-relaxed">
-                                        Independent AI analysis for "{room.name}".
-                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -555,92 +405,89 @@ const RoomCard: React.FC<RoomCardProps> = ({ room, onUpdate, onDelete, projectZi
 
 const LandingPage: React.FC<{ 
     onStartNew: () => void, 
-    onImport: (e: React.ChangeEvent<HTMLInputElement>) => void 
-}> = ({ onStartNew, onImport }) => {
+    onImport: (e: React.ChangeEvent<HTMLInputElement>) => void,
+    onResume?: () => void,
+    hasActiveProject: boolean
+}> = ({ onStartNew, onImport, onResume, hasActiveProject }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     return (
-        <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 overflow-hidden relative">
-            {/* Background Orbs */}
-            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-50 rounded-full blur-[120px] -z-10 animate-pulse"></div>
-            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-green-50 rounded-full blur-[120px] -z-10 animate-pulse delay-1000"></div>
+        <div className="min-h-screen bg-white flex flex-col items-center justify-center p-10 overflow-hidden relative">
+            {/* Animated Background Gradients */}
+            <div className="absolute top-[-25%] left-[-20%] w-[80%] h-[80%] bg-brand-50/40 rounded-full blur-[180px] -z-10 animate-pulse-slow"></div>
+            <div className="absolute bottom-[-20%] right-[-15%] w-[70%] h-[70%] bg-blue-50/40 rounded-full blur-[160px] -z-10 animate-pulse-slow delay-1500"></div>
 
-            <div className="max-w-4xl w-full text-center space-y-12 animate-in fade-in zoom-in duration-700">
-                <div className="space-y-4">
-                    <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-full text-sm font-black tracking-widest uppercase shadow-xl mb-4">
-                        <PenTool size={16} />
-                        ContractorEstimate Pro
+            <div className="max-w-6xl w-full text-center space-y-24 animate-in fade-in zoom-in duration-1000">
+                <div className="space-y-12">
+                    <div className="inline-flex items-center gap-5 px-8 py-4 bg-slate-900 text-white rounded-full text-[11px] font-black tracking-[0.3em] uppercase shadow-[0_30px_60px_-15px_rgba(0,0,0,0.3)] mb-4 scale-110">
+                        <ShieldCheck size={20} className="text-brand-400" />
+                        Professional Estimation Engine
                     </div>
-                    <h1 className="text-5xl md:text-7xl font-black text-slate-900 tracking-tighter leading-none">
-                        Precision Estimates <br />
-                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-green-500">
-                            Powered by AI.
+                    <h1 className="text-8xl md:text-[10rem] font-black text-slate-900 tracking-tighter leading-[0.8] lg:px-24">
+                        Master <br />
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-600 via-brand-500 to-brand-400">
+                            Builds.
                         </span>
                     </h1>
-                    <p className="text-slate-500 text-lg md:text-xl font-medium max-w-2xl mx-auto leading-relaxed">
-                        Transform your construction project management. Professional interior remodel tools with automated pricing, scope analysis, and instant documentation.
+                    <p className="text-slate-500 text-2xl md:text-3xl font-medium max-w-4xl mx-auto leading-relaxed px-8 opacity-90">
+                        The ultimate estimation platform for elite interior remodelers. 
+                        Precision logic, architectural intelligence, and high-fidelity reporting.
                     </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-8">
-                    {/* New Project Card */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-12 pt-12 px-8 max-w-5xl mx-auto">
+                    {/* New Project Action */}
                     <button 
                         onClick={onStartNew}
-                        className="group relative bg-white border-2 border-slate-100 p-8 rounded-[2rem] text-left hover:border-green-400 hover:shadow-2xl hover:shadow-green-100 transition-all duration-300"
+                        className="group relative bg-white border border-slate-100 p-16 rounded-[4.5rem] text-left hover:border-brand-400/40 hover:shadow-[0_60px_100px_-20px_rgba(14,165,233,0.18)] transition-all duration-700 active:scale-[0.98]"
                     >
-                        <div className="w-16 h-16 bg-green-50 text-green-600 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-green-600 group-hover:text-white transition-colors">
-                            <Plus size={32} />
+                        <div className="w-28 h-28 bg-brand-50 text-brand-600 rounded-[2.5rem] flex items-center justify-center mb-12 group-hover:bg-brand-600 group-hover:text-white transition-all duration-700 rotate-12 group-hover:rotate-0 shadow-2xl shadow-brand-50">
+                            <Plus size={56} strokeWidth={3} />
                         </div>
-                        <h3 className="text-2xl font-black text-slate-900 mb-2">New Estimate</h3>
-                        <p className="text-slate-500 text-sm font-medium leading-relaxed mb-6">
-                            Start a fresh project from scratch. Utilize our smart space interpretation and category systems.
+                        <h3 className="text-5xl font-black text-slate-900 mb-6 tracking-tight">New Project</h3>
+                        <p className="text-slate-400 text-xl font-medium leading-relaxed mb-12 pr-10">
+                            Start a fresh estimate from zero using built-in trades and AI-assisted pricing.
                         </p>
-                        <div className="flex items-center gap-2 font-black text-green-600 group-hover:translate-x-2 transition-transform">
-                            Let's Build <ArrowRight size={20} />
+                        <div className="flex items-center gap-5 font-black text-brand-600 group-hover:translate-x-8 transition-transform text-sm uppercase tracking-[0.25em]">
+                            Launch Workspace <ArrowRight size={26} strokeWidth={3} />
                         </div>
                     </button>
 
-                    {/* Import Project Card */}
+                    {/* Import Project Action */}
                     <button 
                         onClick={() => fileInputRef.current?.click()}
-                        className="group relative bg-white border-2 border-slate-100 p-8 rounded-[2rem] text-left hover:border-blue-400 hover:shadow-2xl hover:shadow-blue-100 transition-all duration-300"
+                        className="group relative bg-white border border-slate-100 p-16 rounded-[4.5rem] text-left hover:border-slate-300 hover:shadow-[0_60px_100px_-20px_rgba(0,0,0,0.1)] transition-all duration-700 active:scale-[0.98]"
                     >
-                        <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                            <Upload size={32} />
+                        <div className="w-28 h-28 bg-slate-50 text-slate-700 rounded-[2.5rem] flex items-center justify-center mb-12 group-hover:bg-slate-900 group-hover:text-white transition-all duration-700 -rotate-12 group-hover:rotate-0 shadow-2xl shadow-slate-100">
+                            <Upload size={52} strokeWidth={3} />
                         </div>
-                        <h3 className="text-2xl font-black text-slate-900 mb-2">Import Project</h3>
-                        <p className="text-slate-500 text-sm font-medium leading-relaxed mb-6">
-                            Resume your work by uploading an existing project file. Supports all ContractorEstimate Pro .json formats.
+                        <h3 className="text-5xl font-black text-slate-900 mb-6 tracking-tight">Import Data</h3>
+                        <p className="text-slate-400 text-xl font-medium leading-relaxed mb-12 pr-10">
+                            Restore an existing project file from your local disk or cloud storage.
                         </p>
-                        <div className="flex items-center gap-2 font-black text-blue-600 group-hover:translate-x-2 transition-transform">
-                            Open File <FolderOpen size={20} />
+                        <div className="flex items-center gap-5 font-black text-slate-600 group-hover:translate-x-8 transition-transform text-sm uppercase tracking-[0.25em]">
+                            Sync File <FolderOpen size={26} strokeWidth={3} />
                         </div>
                     </button>
                     <input type="file" ref={fileInputRef} onChange={onImport} accept=".json" className="hidden" />
                 </div>
 
-                {/* Trust Badges / Features */}
-                <div className="pt-12 grid grid-cols-1 md:grid-cols-3 gap-8">
-                    <div className="flex flex-col items-center gap-2">
-                        <div className="p-3 bg-slate-50 rounded-full text-slate-400">
-                            <ShieldCheck size={20} />
-                        </div>
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Confidential Reporting</span>
-                    </div>
-                    <div className="flex flex-col items-center gap-2">
-                        <div className="p-3 bg-slate-50 rounded-full text-slate-400">
-                            <Zap size={20} />
-                        </div>
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Real-time AI Pricing</span>
-                    </div>
-                    <div className="flex flex-col items-center gap-2">
-                        <div className="p-3 bg-slate-50 rounded-full text-slate-400">
-                            <Briefcase size={20} />
-                        </div>
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">White-Label Exports</span>
-                    </div>
-                </div>
+                {hasActiveProject && (
+                  <div className="pt-16">
+                    <button 
+                      onClick={onResume}
+                      className="inline-flex items-center gap-6 text-slate-400 hover:text-slate-900 font-black text-[11px] uppercase tracking-[0.4em] transition-all bg-slate-50 hover:bg-slate-100 px-12 py-6 rounded-full border border-slate-200 shadow-sm"
+                    >
+                      <History size={22} strokeWidth={3} />
+                      RESUME ACTIVE SESSION
+                    </button>
+                  </div>
+                )}
             </div>
+            
+            <footer className="absolute bottom-16 text-slate-300 text-[11px] font-black tracking-[0.5em] uppercase">
+                CONTRACTOR ESTIMATE PRO &copy; 2025 • MASTER SUITE
+            </footer>
         </div>
     );
 };
@@ -653,13 +500,11 @@ const App: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const [showPreview, setShowPreview] = useState(false);
-    const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         const saved = localStorage.getItem('current_project');
         if (saved) {
             setProject(JSON.parse(saved));
-            setCurrentView('editor');
         }
     }, []);
 
@@ -672,7 +517,7 @@ const App: React.FC = () => {
     const startNewProject = () => {
         const newProj: Project = {
             id: crypto.randomUUID(),
-            title: "Untitled Estimate",
+            title: "Project Estimate: " + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
             address: { street: "", city: "", state: "", zip: "" },
             rooms: [],
             contingencyPct: 10,
@@ -696,7 +541,7 @@ const App: React.FC = () => {
                 setProject(json);
                 setCurrentView('editor');
             } catch (err) {
-                alert("Error: Invalid project file.");
+                alert("Critical Error: File format corrupted or incompatible.");
             }
         };
         reader.readAsText(file);
@@ -739,19 +584,13 @@ const App: React.FC = () => {
         setIsLoading(false);
     };
 
-    const saveProjectAsJson = () => {
-        if (!project) return;
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(project, null, 2));
-        const downloadAnchorNode = document.createElement('a');
-        downloadAnchorNode.setAttribute("href", dataStr);
-        downloadAnchorNode.setAttribute("download", `${project.title.replace(/\s+/g, '_')}_data.json`);
-        document.body.appendChild(downloadAnchorNode);
-        downloadAnchorNode.click();
-        downloadAnchorNode.remove();
-    };
-
     if (currentView === 'landing') {
-        return <LandingPage onStartNew={startNewProject} onImport={handleImport} />;
+        return <LandingPage 
+            onStartNew={startNewProject} 
+            onImport={handleImport} 
+            onResume={() => setCurrentView('editor')}
+            hasActiveProject={!!project}
+        />;
     }
 
     if (!project) return null;
@@ -762,82 +601,84 @@ const App: React.FC = () => {
         return base + profit + (item.markup || 0);
     };
 
-    const subtotal = project.rooms.reduce((acc, r) => 
+    // Subtotal including all per-item margins
+    const totalEstimateSubtotal = project.rooms.reduce((acc, r) => 
         acc + r.items.reduce((sum, i) => sum + calcItemTotal(i), 0), 0
     );
 
-    const totalEcoProfitValue = project.rooms.reduce((acc, r) => 
+    const totalCombinedProfit = project.rooms.reduce((acc, r) => 
         acc + r.items.reduce((sum, i) => {
             const base = (i.quantity * i.unitPrice) + (i.quantity * (i.laborRate || 0));
             return sum + (base * ((i.ecoProfit || 0) / 100));
         }, 0), 0
     );
 
-    const contingency = subtotal * (project.contingencyPct / 100);
-    const tax = (subtotal + contingency) * (project.taxPct / 100);
-    const grossTotal = subtotal + contingency + tax;
-    const discount = grossTotal * (project.discountPct / 100);
-    const grandTotal = grossTotal - discount;
+    // Global Overrides
+    const contingencyValue = totalEstimateSubtotal * ((project.contingencyPct || 0) / 100);
+    const taxableTotal = totalEstimateSubtotal + contingencyValue;
+    const taxValue = taxableTotal * ((project.taxPct || 0) / 100);
+    
+    // Final Client Value
+    const grossEstimateValue = taxableTotal + taxValue;
+    const discountAmount = grossEstimateValue * ((project.discountPct || 0) / 100);
+    const grandTotalValue = grossEstimateValue - discountAmount;
 
-    const formatPrice = (n: number) => `$${n.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    const formatPrice = (n: number) => `$${n.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
 
     return (
-        <div className="min-h-screen bg-[#F8FAFC] text-slate-900 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-100 shadow-sm">
-                <div className="max-w-7xl mx-auto px-4 h-20 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <button onClick={() => setCurrentView('landing')} className="bg-slate-900 p-2.5 rounded-xl shadow-lg hover:scale-105 transition-transform">
-                            <PenTool className="text-white" size={24} />
+        <div className="min-h-screen pb-32 animate-in fade-in slide-in-from-bottom-10 duration-1000">
+            <header className="sticky top-0 z-40 bg-white/70 backdrop-blur-3xl border-b border-slate-200/50 shadow-sm">
+                <div className="max-w-7xl mx-auto px-10 h-32 flex items-center justify-between">
+                    <div className="flex items-center gap-10">
+                        <button onClick={() => setCurrentView('landing')} className="bg-slate-900 p-5 rounded-[1.75rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] hover:scale-110 transition-all hover:bg-brand-600 group active:scale-95">
+                            <PenTool className="text-brand-400 group-hover:text-white" size={36} />
                         </button>
                         <div>
                             <input 
-                                className="text-xl font-black bg-transparent border-none focus:ring-0 p-0 text-slate-800"
+                                className="text-4xl font-black bg-transparent border-none focus:ring-0 p-0 text-slate-900 tracking-tighter"
                                 value={project.title}
                                 onChange={(e) => setProject({ ...project, title: e.target.value })}
-                                placeholder="Project Title"
+                                placeholder="Untitled Project"
                             />
-                            <div className="flex items-center gap-1.5 text-slate-400 text-sm font-medium mt-0.5">
-                                <MapPin size={14} />
+                            <div className="flex items-center gap-4 text-slate-400 text-[11px] font-black uppercase tracking-[0.25em] mt-3">
+                                <MapPin size={16} className="text-brand-500" />
                                 {project.address.street ? (
-                                    <span>{project.address.street}, {project.address.city}</span>
+                                    <span className="text-slate-500">{project.address.street}, {project.address.city}</span>
                                 ) : (
-                                    <button onClick={() => setShowSettings(true)} className="hover:text-slate-600">Add Address</button>
+                                    <button onClick={() => setShowSettings(true)} className="hover:text-brand-600 transition-colors border-b border-dashed border-slate-300 pb-0.5">SET SITE COORDINATES</button>
                                 )}
                             </div>
                         </div>
                     </div>
                     
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-6">
                         <button 
                             onClick={() => addRoom()}
-                            className="bg-green-600 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 font-black text-sm shadow-xl shadow-green-100 hover:bg-green-700 transition-all hover:scale-[1.02] active:scale-95 duration-200"
+                            className="bg-brand-600 text-white px-10 py-5 rounded-[1.5rem] flex items-center gap-4 font-black text-xs uppercase tracking-[0.2em] shadow-[0_30px_60px_-15px_rgba(14,165,233,0.3)] hover:bg-brand-700 transition-all hover:-translate-y-1 active:scale-95"
                         >
-                            <Plus size={20} /> Add New Room
+                            <Plus size={24} strokeWidth={3} /> NEW AREA
                         </button>
                         <button 
                             onClick={() => setShowPreview(true)}
-                            className="p-3 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-xl flex items-center gap-2 font-bold text-sm transition-colors"
+                            className="px-8 py-5 text-slate-500 hover:text-slate-900 bg-white hover:bg-slate-50 rounded-[1.5rem] flex items-center gap-4 font-black text-xs uppercase tracking-[0.2em] transition-all shadow-sm border border-slate-100"
                         >
-                            <Eye size={20} /> Preview
+                            <Eye size={26} /> PROPOSAL PREVIEW
                         </button>
-                        <button onClick={() => setShowSettings(true)} className="p-3 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-xl">
-                            <Settings size={22} />
+                        <button onClick={() => setShowSettings(true)} className="p-5 text-slate-400 hover:text-slate-900 hover:bg-slate-50 rounded-[1.5rem] transition-all">
+                            <Settings size={30} />
                         </button>
-                        <div className="h-8 w-px bg-gray-100 mx-1" />
+                        <div className="h-14 w-px bg-slate-200/40 mx-3" />
                         <div className="dropdown relative group">
-                            <button className="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-xl hover:bg-slate-800 transition-all">
-                                <Download size={18} />
-                                Export
+                            <button className="bg-slate-900 text-white px-12 py-5 rounded-[1.5rem] font-black text-xs uppercase tracking-[0.2em] flex items-center gap-4 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.4)] hover:bg-brand-600 transition-all active:scale-95">
+                                <Download size={24} strokeWidth={2.5} />
+                                EXPORT
                             </button>
-                            <div className="absolute top-full right-0 mt-2 w-56 bg-white rounded-xl shadow-2xl border border-gray-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all py-2 z-50">
-                                <button onClick={() => exportService.exportPDF(project)} className="w-full text-left px-4 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3">
-                                    <FileText size={18} className="text-red-500" /> PDF
+                            <div className="absolute top-full right-0 mt-6 w-80 bg-white rounded-[2.5rem] shadow-[0_50px_100px_-20px_rgba(0,0,0,0.25)] border border-slate-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all py-6 z-50 overflow-hidden translate-y-4 group-hover:translate-y-0">
+                                <button onClick={() => exportService.exportPDF(project)} className="w-full text-left px-8 py-6 text-xs font-black uppercase tracking-[0.3em] text-slate-600 hover:bg-brand-50 hover:text-brand-700 flex items-center gap-5 transition-colors">
+                                    <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center text-red-500 shadow-sm"><FileText size={26} /></div> PDF REPORT
                                 </button>
-                                <button onClick={() => exportService.exportExcel(project)} className="w-full text-left px-4 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3">
-                                    <Table size={18} className="text-green-600" /> Excel
-                                </button>
-                                <button onClick={() => exportService.exportWord(project)} className="w-full text-left px-4 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3">
-                                    <FileEdit size={18} className="text-blue-500" /> Word
+                                <button onClick={() => exportService.exportExcel(project)} className="w-full text-left px-8 py-6 text-xs font-black uppercase tracking-[0.3em] text-slate-600 hover:bg-brand-50 hover:text-brand-700 flex items-center gap-5 transition-colors">
+                                    <div className="w-12 h-12 rounded-2xl bg-green-50 flex items-center justify-center text-green-600 shadow-sm"><Table size={26} /></div> EXCEL WORKBOOK
                                 </button>
                             </div>
                         </div>
@@ -845,24 +686,28 @@ const App: React.FC = () => {
                 </div>
             </header>
 
-            <main className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
-                <div className="lg:col-span-8 space-y-8">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-                            <div className="text-xs font-bold text-slate-400 uppercase mb-1 tracking-widest">Subtotal (Inc. ECO Profit)</div>
-                            <div className="text-2xl font-black text-slate-900">{formatPrice(subtotal)}</div>
+            <main className="max-w-7xl mx-auto px-10 py-20 grid grid-cols-1 lg:grid-cols-12 gap-16">
+                <div className="lg:col-span-8 space-y-16">
+                    {/* High Level Stats */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                        <div className="bg-white p-12 rounded-[3.5rem] border border-slate-200/30 shadow-sm relative overflow-hidden group">
+                            <div className="absolute -top-12 -right-12 w-48 h-48 bg-brand-50 rounded-full -z-0 opacity-40 group-hover:scale-150 transition-transform duration-1000"></div>
+                            <div className="text-[11px] font-black text-slate-400 uppercase mb-4 tracking-[0.3em] relative z-10">Total Estimated Subtotal</div>
+                            <div className="text-5xl font-black text-slate-900 relative z-10 tracking-tighter leading-none">{formatPrice(totalEstimateSubtotal)}</div>
                         </div>
-                        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-                            <div className="text-xs font-bold text-slate-400 uppercase mb-1 tracking-widest">Grand Total Estimate</div>
-                            <div className="text-2xl font-black text-slate-900">{formatPrice(grandTotal)}</div>
+                        <div className="bg-slate-900 p-12 rounded-[3.5rem] border border-slate-800 shadow-[0_40px_80px_-20px_rgba(0,0,0,0.4)] relative overflow-hidden group">
+                            <div className="absolute -top-12 -right-12 w-48 h-48 bg-brand-600 rounded-full -z-0 opacity-20 group-hover:scale-150 transition-transform duration-1000"></div>
+                            <div className="text-[11px] font-black text-slate-500 uppercase mb-4 tracking-[0.3em] relative z-10">Consolidated Project Quote</div>
+                            <div className="text-5xl font-black text-brand-400 relative z-10 tracking-tighter leading-none">{formatPrice(grandTotalValue)}</div>
                         </div>
                     </div>
 
-                    <div className="space-y-4">
-                        <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
-                                <LayoutPanelLeft className="text-slate-400" />
-                                Project Areas
+                    {/* Room Cards */}
+                    <div className="space-y-12">
+                        <div className="flex items-center justify-between mb-6">
+                            <h2 className="text-5xl font-black text-slate-900 tracking-tighter flex items-center gap-6">
+                                <LayoutPanelLeft className="text-brand-500" size={44} strokeWidth={2.5} />
+                                Area Inventory
                             </h2>
                         </div>
 
@@ -873,140 +718,144 @@ const App: React.FC = () => {
                                 onUpdate={updateRoom}
                                 onDelete={() => deleteRoom(room.id)}
                                 projectZip={project.address.zip}
-                                apiKey={process.env.API_KEY || ""}
                             />
                         ))}
 
                         <button 
                             onClick={() => addRoom()}
-                            className="w-full py-8 bg-white border-4 border-dashed border-green-200 rounded-3xl flex items-center justify-center gap-4 text-green-600 font-black text-xl hover:bg-green-50 hover:border-green-400 transition-all shadow-md group active:scale-[0.99]"
+                            className="w-full py-32 bg-white border-4 border-dashed border-slate-100 rounded-[4.5rem] flex flex-col items-center justify-center gap-8 text-slate-300 font-black text-3xl hover:bg-brand-50/20 hover:border-brand-300 hover:text-brand-600 transition-all shadow-sm group active:scale-[0.98]"
                         >
-                            <Plus size={32} className="group-hover:scale-110 transition-transform" /> Add New Project Space
+                            <div className="w-24 h-24 rounded-[2.5rem] bg-slate-50 flex items-center justify-center group-hover:bg-brand-100 transition-all group-hover:scale-110 active:scale-90">
+                                <Plus size={52} strokeWidth={3} />
+                            </div>
+                            DEFINE NEW WORK AREA
                         </button>
                     </div>
                 </div>
 
-                <div className="lg:col-span-4 space-y-8">
-                    <div className="bg-slate-900 rounded-3xl p-8 text-white shadow-2xl sticky top-28">
-                        <h3 className="text-lg font-bold mb-6 flex items-center gap-2 opacity-80 uppercase tracking-widest">
-                            <Calculator size={20} />
-                            Project Logic
+                {/* Right Sidebar Financials */}
+                <div className="lg:col-span-4 space-y-16">
+                    <div className="bg-white rounded-[4rem] p-16 border border-slate-200/50 shadow-[0_60px_100px_-30px_rgba(0,0,0,0.1)] sticky top-48">
+                        <h3 className="text-[11px] font-black mb-16 flex items-center gap-5 text-slate-400 uppercase tracking-[0.4em]">
+                            <Calculator size={24} strokeWidth={2.5} />
+                            FINANCIAL LOGIC
                         </h3>
                         
-                        <div className="space-y-4 mb-8">
-                            <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-400 font-bold">Contingency %</span>
+                        <div className="space-y-10 mb-16">
+                            <div className="flex justify-between items-center group">
+                                <div className="flex flex-col">
+                                    <span className="text-[12px] font-black text-slate-800 uppercase tracking-[0.2em]">Contingency %</span>
+                                    <span className="text-[10px] text-slate-400 font-medium">Risk buffer across total</span>
+                                </div>
                                 <input 
-                                    type="number" className="w-16 bg-white border-none rounded p-1 text-sm text-center text-slate-900 focus:ring-2 focus:ring-green-500 outline-none font-bold"
+                                    type="number" className="w-28 bg-slate-50 border-none rounded-[1.25rem] p-5 text-sm text-center text-slate-900 focus:ring-4 focus:ring-brand-500/10 outline-none font-black shadow-inner transition-all"
                                     value={project.contingencyPct} onChange={(e) => setProject({...project, contingencyPct: Number(e.target.value)})}
                                 />
                             </div>
-                            <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-400 font-bold">Tax %</span>
+                            <div className="flex justify-between items-center group">
+                                <div className="flex flex-col">
+                                    <span className="text-[12px] font-black text-slate-800 uppercase tracking-[0.2em]">Sales Tax %</span>
+                                    <span className="text-[10px] text-slate-400 font-medium">Applied to taxable total</span>
+                                </div>
                                 <input 
-                                    type="number" className="w-16 bg-white border-none rounded p-1 text-sm text-center text-slate-900 focus:ring-2 focus:ring-green-500 outline-none font-bold"
+                                    type="number" className="w-28 bg-slate-50 border-none rounded-[1.25rem] p-5 text-sm text-center text-slate-900 focus:ring-4 focus:ring-brand-500/10 outline-none font-black shadow-inner transition-all"
                                     value={project.taxPct} onChange={(e) => setProject({...project, taxPct: Number(e.target.value)})}
                                 />
                             </div>
-                            <div className="flex justify-between items-center text-sm pt-2 border-t border-slate-800">
-                                <div className="flex items-center gap-2 text-green-400">
-                                    <TrendingUp size={16} />
-                                    <span className="font-bold">Total ECO Profit</span>
+                            <div className="pt-10 border-t border-slate-100 flex justify-between items-center">
+                                <div className="flex items-center gap-4 text-green-600">
+                                    <TrendingUp size={24} />
+                                    <span className="text-[12px] font-black uppercase tracking-[0.2em]">Total Profit Sum</span>
                                 </div>
-                                <span className="text-green-400 font-black text-lg">{formatPrice(totalEcoProfitValue)}</span>
+                                <span className="text-green-600 font-black text-2xl">{formatPrice(totalCombinedProfit)}</span>
                             </div>
                         </div>
 
-                        <div className="pt-6 border-t border-slate-800">
-                            <div className="text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Total with Internal Profit</div>
-                            <div className="text-4xl font-black text-green-400">{formatPrice(grandTotal)}</div>
+                        <div className="pt-16 border-t-[6px] border-slate-900">
+                            <div className="text-[11px] font-black text-slate-400 uppercase mb-6 tracking-[0.4em]">PROPOSED GRAND TOTAL</div>
+                            <div className="text-7xl font-black text-slate-900 tracking-tighter leading-none">{formatPrice(grandTotalValue)}</div>
                         </div>
 
-                        <div className="mt-10">
+                        <div className="mt-20">
                             <button 
-                                onClick={saveProjectAsJson}
-                                className="w-full bg-green-600 text-white py-4 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-green-700 transition-all flex items-center justify-center gap-2 shadow-xl shadow-green-900/40"
+                                onClick={() => {
+                                  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(project, null, 2));
+                                  const downloadAnchorNode = document.createElement('a');
+                                  downloadAnchorNode.setAttribute("href", dataStr);
+                                  downloadAnchorNode.setAttribute("download", `${project.title.replace(/\s+/g, '_')}_data.json`);
+                                  document.body.appendChild(downloadAnchorNode);
+                                  downloadAnchorNode.click();
+                                  downloadAnchorNode.remove();
+                                }}
+                                className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black text-xs uppercase tracking-[0.25em] hover:bg-brand-600 transition-all flex items-center justify-center gap-5 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.5)] hover:-translate-y-1.5 active:scale-95"
                             >
-                                <Save size={18} /> Download Project (.JSON)
+                                <Save size={24} /> SYNC TO DRIVE (.JSON)
                             </button>
                         </div>
-                    </div>
-
-                    <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-                        <h3 className="text-sm font-bold text-slate-400 uppercase mb-4 flex items-center gap-2">
-                            <ClipboardList size={16} />
-                            Internal Notes
-                        </h3>
-                        <textarea 
-                            className="w-full bg-white border border-gray-100 rounded-xl p-3 text-sm min-h-[120px] focus:ring-2 focus:ring-slate-900 outline-none placeholder:text-gray-300 resize-none shadow-sm"
-                            placeholder="Internal project coordination notes..."
-                            value={project.notes}
-                            onChange={(e) => setProject({ ...project, notes: e.target.value })}
-                        />
                     </div>
                 </div>
             </main>
 
-            {/* Project Settings Modal */}
+            {/* Geographic Search Modal */}
             {showSettings && (
-                <Modal title="Project Settings" onClose={() => setShowSettings(false)}>
-                    <div className="space-y-6">
+                <Modal title="Geographic Intelligence Context" onClose={() => setShowSettings(false)}>
+                    <div className="space-y-12">
                         <div>
-                            <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Address Search</label>
-                            <div className="flex gap-2">
+                            <label className="block text-[12px] font-black text-slate-400 mb-6 uppercase tracking-[0.3em]">Global Site Search</label>
+                            <div className="flex gap-5">
                                 <div className="relative flex-1">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                                    <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300" size={26} strokeWidth={2.5} />
                                     <input 
-                                        className="w-full bg-white border border-gray-200 rounded-xl pl-10 pr-4 py-3 text-sm focus:ring-2 focus:ring-slate-900 outline-none"
-                                        placeholder="Address for zip matching..."
+                                        className="w-full bg-slate-50/50 border border-slate-200 rounded-[1.75rem] pl-20 pr-8 py-6 text-sm font-bold focus:ring-4 focus:ring-brand-500/10 outline-none shadow-inner transition-all"
+                                        placeholder="Enter address to sync local material/labor rates..."
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') handleValidateAddress((e.target as HTMLInputElement).value);
                                         }}
                                     />
                                 </div>
                                 <button 
-                                    className="bg-slate-900 text-white px-4 py-3 rounded-xl hover:bg-slate-800 transition-colors"
+                                    className="bg-slate-900 text-white px-10 py-6 rounded-[1.75rem] hover:bg-brand-600 transition-all shadow-[0_20px_40px_-10px_rgba(0,0,0,0.3)] hover:-translate-y-1 active:scale-95"
                                     onClick={(e) => {
                                         const input = e.currentTarget.previousElementSibling?.querySelector('input');
                                         if (input) handleValidateAddress(input.value);
                                     }}
                                     disabled={isLoading}
                                 >
-                                    {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}
+                                    {isLoading ? <Loader2 size={28} className="animate-spin" /> : <ArrowRight size={28} strokeWidth={3} />}
                                 </button>
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-2 gap-10 bg-slate-50/50 p-10 rounded-[3rem] border border-slate-100">
                             <div className="col-span-2">
-                                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Street</label>
+                                <label className="block text-[11px] font-black text-slate-400 mb-4 uppercase tracking-[0.2em]">Physical Street Address</label>
                                 <input 
-                                    className="w-full bg-white border border-gray-200 rounded-lg p-2.5 text-sm"
+                                    className="w-full bg-white border border-slate-200 rounded-[1.25rem] px-6 py-5 text-sm font-black shadow-sm"
                                     value={project.address.street}
                                     onChange={(e) => setProject({ ...project, address: { ...project.address, street: e.target.value }})}
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">City</label>
+                                <label className="block text-[11px] font-black text-slate-400 mb-4 uppercase tracking-[0.2em]">City / Locality</label>
                                 <input 
-                                    className="w-full bg-white border border-gray-200 rounded-lg p-2.5 text-sm"
+                                    className="w-full bg-white border border-slate-200 rounded-[1.25rem] px-6 py-5 text-sm font-black shadow-sm"
                                     value={project.address.city}
                                     onChange={(e) => setProject({ ...project, address: { ...project.address, city: e.target.value }})}
                                 />
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-2 gap-6">
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">State</label>
+                                    <label className="block text-[11px] font-black text-slate-400 mb-4 uppercase tracking-[0.2em]">State</label>
                                     <input 
-                                        className="w-full bg-white border border-gray-200 rounded-lg p-2.5 text-sm"
+                                        className="w-full bg-white border border-slate-200 rounded-[1.25rem] px-6 py-5 text-sm font-black shadow-sm text-center uppercase tracking-widest"
                                         value={project.address.state}
                                         onChange={(e) => setProject({ ...project, address: { ...project.address, state: e.target.value }})}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">ZIP</label>
+                                    <label className="block text-[11px] font-black text-slate-400 mb-4 uppercase tracking-[0.2em]">Zip Code</label>
                                     <input 
-                                        className="w-full bg-white border border-gray-200 rounded-lg p-2.5 text-sm"
+                                        className="w-full bg-white border border-slate-200 rounded-[1.25rem] px-6 py-5 text-sm font-black shadow-sm text-center tracking-widest"
                                         value={project.address.zip}
                                         onChange={(e) => setProject({ ...project, address: { ...project.address, zip: e.target.value }})}
                                     />
@@ -1014,68 +863,64 @@ const App: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="pt-4 flex justify-end">
-                            <button onClick={() => setShowSettings(false)} className="bg-slate-900 text-white px-8 py-3 rounded-xl font-bold shadow-lg">
-                                Done
+                        <div className="pt-8 flex justify-end">
+                            <button onClick={() => setShowSettings(false)} className="bg-slate-900 text-white px-16 py-6 rounded-[1.5rem] font-black text-xs uppercase tracking-[0.4em] shadow-2xl hover:bg-brand-600 transition-all active:scale-95">
+                                CONFIRM SITE COORDINATES
                             </button>
                         </div>
                     </div>
                 </Modal>
             )}
 
-            {/* Report Preview Modal */}
+            {/* Rendering the Proposal Modal */}
             {showPreview && (
-                <Modal title="Report Preview (Client Facing)" onClose={() => setShowPreview(false)} maxWidth="max-w-5xl">
-                    <div className="bg-slate-50 p-8 rounded-xl border border-gray-200 shadow-inner min-h-[800px] flex flex-col font-serif">
-                        <div className="bg-white p-12 shadow-2xl flex-1 mx-auto w-full max-w-[800px] text-slate-800">
-                            <div className="flex justify-between items-start border-b-2 border-slate-900 pb-8 mb-8">
+                <Modal title="High-Fidelity Client Proposal Render" onClose={() => setShowPreview(false)} maxWidth="max-w-[1000px]">
+                    <div className="bg-slate-100/50 p-16 rounded-[4rem] border border-slate-200 shadow-inner min-h-[1100px] flex flex-col font-serif overflow-hidden relative">
+                        {/* Print Ready Sheet */}
+                        <div className="bg-white p-20 shadow-[0_60px_100px_-30px_rgba(0,0,0,0.15)] flex-1 mx-auto w-full text-slate-800 relative z-10">
+                            <div className="flex justify-between items-start border-b-[12px] border-slate-900 pb-16 mb-20">
                                 <div>
-                                    <h1 className="text-4xl font-black text-slate-900 tracking-tight mb-2 uppercase">Estimate</h1>
-                                    <p className="text-slate-500 text-sm font-bold uppercase tracking-widest">Remodel & Renovation Package</p>
+                                    <h1 className="text-7xl font-black text-slate-900 tracking-tighter mb-6 uppercase leading-none">Estimate</h1>
+                                    <p className="text-slate-400 text-xs font-black uppercase tracking-[0.5em] pl-1">Professional Infrastructure Services</p>
                                 </div>
-                                <div className="text-right">
-                                    <p className="font-bold text-slate-900 text-lg">{project.title}</p>
-                                    <p className="text-slate-500 text-sm">{project.address.street}</p>
-                                    <p className="text-slate-500 text-sm">{project.address.city}, {project.address.state} {project.address.zip}</p>
-                                    <p className="text-slate-400 text-xs mt-2 italic">Date: {new Date().toLocaleDateString()}</p>
+                                <div className="text-right space-y-3">
+                                    <p className="font-bold text-2xl text-slate-900 tracking-tight">{project.title}</p>
+                                    <p className="text-slate-500 text-base italic">{project.address.street}</p>
+                                    <p className="text-slate-500 text-base italic">{project.address.city}, {project.address.state} {project.address.zip}</p>
+                                    <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.3em] pt-6">Issued: {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
                                 </div>
                             </div>
 
-                            <div className="space-y-12">
+                            <div className="space-y-24">
                                 {project.rooms.map(room => (
-                                    <div key={room.id}>
-                                        <div className="flex items-center gap-4 border-b border-slate-200 pb-2 mb-4">
-                                            {room.photo && (
-                                                <img src={room.photo} className="w-16 h-16 rounded object-cover border border-slate-100 shadow-sm" alt={room.name} />
-                                            )}
-                                            <h2 className="text-xl font-black text-slate-900 uppercase tracking-wide">{room.name}</h2>
+                                    <div key={room.id} className="animate-in fade-in slide-in-from-left-6 duration-700">
+                                        <div className="flex items-center gap-8 border-b-2 border-slate-100 pb-4 mb-10">
+                                            <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">{room.name}</h2>
                                         </div>
                                         <table className="w-full text-sm text-left">
                                             <thead>
-                                                <tr className="bg-slate-50 text-slate-500 text-[10px] font-black uppercase tracking-widest border-y border-slate-100">
-                                                    <th className="py-2 px-3">Category</th>
-                                                    <th className="py-2 px-3">Description</th>
-                                                    <th className="py-2 px-3">Payment Due</th>
-                                                    <th className="py-2 px-3 text-right">Total</th>
+                                                <tr className="bg-slate-50 text-slate-400 text-[11px] font-black uppercase tracking-[0.3em] border-y border-slate-100">
+                                                    <th className="py-5 px-6 w-[28%]">Work Trade</th>
+                                                    <th className="py-5 px-6">Architectural Scope & Specs</th>
+                                                    <th className="py-5 px-6 text-right w-[22%]">Allocated Sum</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-50">
                                                 {room.items.map(item => {
                                                     const itemTotal = calcItemTotal(item);
                                                     return (
-                                                        <tr key={item.id} className="border-b border-slate-50 last:border-0">
-                                                            <td className="py-3 px-3 font-bold text-slate-800 text-xs align-top">{item.category}</td>
-                                                            <td className="py-3 px-3 text-slate-500 text-xs italic align-top leading-relaxed">{item.description}</td>
-                                                            <td className="py-3 px-3 text-slate-500 text-[10px] font-medium uppercase align-top">{item.paymentDue}</td>
-                                                            <td className="py-3 px-3 text-right font-bold text-slate-900 text-xs align-top">{formatPrice(itemTotal)}</td>
+                                                        <tr key={item.id} className="border-b border-slate-50">
+                                                            <td className="py-7 px-6 font-bold text-slate-800 text-xs align-top uppercase tracking-tight">{item.category}</td>
+                                                            <td className="py-7 px-6 text-slate-500 text-[13px] italic align-top leading-relaxed">{item.description}</td>
+                                                            <td className="py-7 px-6 text-right font-bold text-slate-900 text-sm align-top tracking-tight">{formatPrice(itemTotal)}</td>
                                                         </tr>
                                                     );
                                                 })}
                                             </tbody>
                                             <tfoot>
-                                                <tr className="border-t-2 border-slate-100 font-bold">
-                                                    <td colSpan={3} className="py-3 px-3 text-right text-xs text-slate-400">Space Subtotal:</td>
-                                                    <td className="py-3 px-3 text-right text-sm text-slate-900">
+                                                <tr className="border-t-[3px] border-slate-900 font-black">
+                                                    <td colSpan={2} className="py-7 px-6 text-right text-[11px] text-slate-400 uppercase tracking-[0.4em]">{room.name} Total Allocation:</td>
+                                                    <td className="py-7 px-6 text-right text-lg text-slate-900 tracking-tighter">
                                                         {formatPrice(room.items.reduce((acc, i) => acc + calcItemTotal(i), 0))}
                                                     </td>
                                                 </tr>
@@ -1085,50 +930,33 @@ const App: React.FC = () => {
                                 ))}
                             </div>
 
-                            <div className="mt-16 pt-8 border-t-2 border-slate-900 flex justify-end">
-                                <div className="w-full max-w-[350px] space-y-3">
-                                    <div className="flex justify-between text-slate-500 text-sm">
-                                        <span>Subtotal (Inclusive of all Fees)</span>
-                                        <span className="font-bold">{formatPrice(subtotal)}</span>
+                            <div className="mt-32 pt-16 border-t-[12px] border-slate-900 flex justify-end">
+                                <div className="w-full max-w-[480px] space-y-6">
+                                    <div className="flex justify-between text-slate-500 text-base font-bold border-b border-slate-100 pb-3">
+                                        <span className="uppercase tracking-[0.3em] text-[11px]">Consolidated Subtotal</span>
+                                        <span>{formatPrice(totalEstimateSubtotal)}</span>
                                     </div>
                                     {project.contingencyPct > 0 && (
-                                        <div className="flex justify-between text-slate-500 text-sm italic">
-                                            <span>Reserve Contingency ({project.contingencyPct}%)</span>
-                                            <span>{formatPrice(contingency)}</span>
+                                        <div className="flex justify-between text-slate-400 text-sm italic">
+                                            <span>Contingency Risk Reserve ({project.contingencyPct}%)</span>
+                                            <span>{formatPrice(contingencyValue)}</span>
                                         </div>
                                     )}
-                                    <div className="flex justify-between text-slate-500 text-sm">
-                                        <span>Estimated Sales Tax</span>
-                                        <span>{formatPrice(tax)}</span>
+                                    <div className="flex justify-between text-slate-400 text-sm font-medium">
+                                        <span>Estimated Jurisdictional Tax ({project.taxPct}%)</span>
+                                        <span>{formatPrice(taxValue)}</span>
                                     </div>
-                                    <div className="flex justify-between text-slate-900 text-2xl font-black pt-4 border-t-2 border-slate-200">
-                                        <span>GRAND TOTAL</span>
-                                        <span className="text-green-700">{formatPrice(grandTotal)}</span>
+                                    <div className="flex justify-between text-slate-900 text-5xl font-black pt-10 border-t-[5px] border-slate-900 items-baseline">
+                                        <span className="tracking-tighter">GRAND TOTAL</span>
+                                        <span className="text-brand-600 tracking-tighter">{formatPrice(grandTotalValue)}</span>
+                                    </div>
+                                    <div className="pt-16 text-[10px] text-slate-300 italic text-right leading-loose">
+                                        This document serves as a high-fidelity budgetary index. 
+                                        Execution is subject to signed contractual agreements and detailed material selection. 
+                                        Profit indices are proprietary and non-itemized.
                                     </div>
                                 </div>
                             </div>
-
-                            <div className="mt-20 text-[10px] text-slate-300 italic text-center">
-                                * Confidential Document. Pricing includes materials, professional labor, and administrative overhead. Profit margins are integrated and not itemized.
-                            </div>
-                        </div>
-                    </div>
-                    <div className="mt-8 flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200">
-                        <div className="flex items-center gap-3 text-slate-500 text-xs font-bold">
-                            <Check className="text-green-500" size={16} />
-                            ECO Profit and Area Photos are processed for professional presentation.
-                        </div>
-                        <div className="flex gap-4">
-                            <button onClick={() => setShowPreview(false)} className="px-6 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors">Close Preview</button>
-                            <button 
-                                onClick={() => {
-                                    exportService.exportPDF(project);
-                                    setShowPreview(false);
-                                }} 
-                                className="bg-slate-900 text-white px-8 py-2 rounded-xl text-sm font-black shadow-lg hover:bg-slate-800 flex items-center gap-2"
-                            >
-                                <Download size={18} /> Export Final PDF
-                            </button>
                         </div>
                     </div>
                 </Modal>

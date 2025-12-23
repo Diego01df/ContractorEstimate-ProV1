@@ -5,8 +5,8 @@ import * as XLSX from 'xlsx';
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, HeadingLevel, AlignmentType, BorderStyle, ImageRun } from 'docx';
 import { Project, LineItem, CATEGORY_DESCRIPTIONS, PAYMENT_TERMS } from '../types';
 
-// Helper to calculate totals including internal ECO Profit
-const calcLine = (item: LineItem) => {
+// Helper to calculate total line item cost including profit
+const calcLineTotal = (item: LineItem) => {
     const base = (item.quantity * item.unitPrice) + (item.quantity * (item.laborRate || 0));
     const profit = base * ((item.ecoProfit || 0) / 100);
     return base + profit + (item.markup || 0);
@@ -31,12 +31,12 @@ export const exportPDF = (project: Project) => {
     doc.text(`Date: ${new Date().toLocaleDateString()}`, 14, 40);
 
     let finalY = 50;
-    let projectSubtotal = 0;
+    let projectTotal = 0;
 
     project.rooms.forEach(room => {
         let roomTotal = 0;
         const bodyData = room.items.map(item => {
-            const total = calcLine(item);
+            const total = calcLineTotal(item);
             roomTotal += total;
             
             const displayDescription = item.description || CATEGORY_DESCRIPTIONS[item.category] || item.category;
@@ -48,37 +48,19 @@ export const exportPDF = (project: Project) => {
                 formatMoney(total)
             ];
         });
-        projectSubtotal += roomTotal;
+        projectTotal += roomTotal;
 
         if (finalY > 230) {
             doc.addPage();
             finalY = 20;
         }
 
-        // Room Header with Image
-        if (room.photo) {
-            try {
-                doc.addImage(room.photo, 'JPEG', 14, finalY, 20, 20);
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(14);
-                doc.setTextColor(15, 23, 42);
-                doc.text(room.name, 38, finalY + 12);
-                finalY += 25;
-            } catch (e) {
-                console.warn("PDF addImage failed", e);
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(14);
-                doc.setTextColor(15, 23, 42);
-                doc.text(room.name, 14, finalY + 10);
-                finalY += 15;
-            }
-        } else {
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(14);
-            doc.setTextColor(15, 23, 42);
-            doc.text(room.name, 14, finalY + 10);
-            finalY += 15;
-        }
+        // Room Header
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.setTextColor(15, 23, 42);
+        doc.text(room.name, 14, finalY + 10);
+        finalY += 15;
         
         autoTable(doc, {
             startY: finalY,
@@ -119,9 +101,10 @@ export const exportPDF = (project: Project) => {
         finalY = doc.lastAutoTable.finalY + 10;
     });
 
-    const contingency = projectSubtotal * ((project.contingencyPct || 0) / 100);
-    const tax = (projectSubtotal + contingency) * (project.taxPct / 100);
-    const gross = projectSubtotal + contingency + tax;
+    const contingency = projectTotal * ((project.contingencyPct || 0) / 100);
+    const taxableAmount = projectTotal + contingency;
+    const tax = taxableAmount * (project.taxPct / 100);
+    const gross = taxableAmount + tax;
     const discount = gross * ((project.discountPct || 0) / 100);
     const grandTotal = gross - discount;
 
@@ -135,14 +118,16 @@ export const exportPDF = (project: Project) => {
     doc.text("Summary", 14, finalY + 5);
     
     const summaryBody = [];
+    summaryBody.push(['Project Subtotal', formatMoney(projectTotal)]);
+    
     if ((project.contingencyPct || 0) > 0) {
         summaryBody.push([`Contingency (${project.contingencyPct || 0}%)`, formatMoney(contingency)]);
     }
     summaryBody.push(['Estimated Tax', formatMoney(tax)]);
-    summaryBody.push(['Grand Total Estimate:', formatMoney(gross)]);
+    summaryBody.push(['Gross Estimate', formatMoney(gross)]);
     
     if (discount > 0) {
-        summaryBody.push([`Discount (${project.discountPct || 0}%)`, `-${formatMoney(discount)}`]);
+        summaryBody.push([`Adjustment/Discount (${project.discountPct || 0}%)`, `-${formatMoney(discount)}`]);
         summaryBody.push(['Final Adjusted Total', formatMoney(grandTotal)]);
     }
 
@@ -163,38 +148,40 @@ export const exportPDF = (project: Project) => {
 export const exportExcel = (project: Project) => {
     const wb = XLSX.utils.book_new();
     
-    let projectSubtotal = 0;
-    const summaryData = [
+    let projectTotal = 0;
+    const summaryData: (string | number)[][] = [
         ["Project Title", project.title],
         ["Address", `${project.address.street}, ${project.address.city}, ${project.address.zip}`],
         ["Date", new Date().toLocaleDateString()],
         [],
-        ["Room", "Subtotal"]
+        ["Room", "Subtotal (USD)"]
     ];
 
     project.rooms.forEach(room => {
         let roomTotal = 0;
-        room.items.forEach(i => roomTotal += calcLine(i));
-        projectSubtotal += roomTotal;
-        summaryData.push([room.name, String(roomTotal)]);
+        room.items.forEach(i => roomTotal += calcLineTotal(i));
+        projectTotal += roomTotal;
+        summaryData.push([room.name, roomTotal]);
     });
 
-    const contingency = projectSubtotal * ((project.contingencyPct || 0) / 100);
-    const tax = (projectSubtotal + contingency) * (project.taxPct / 100);
-    const gross = projectSubtotal + contingency + tax;
+    const contingency = projectTotal * ((project.contingencyPct || 0) / 100);
+    const taxableAmount = projectTotal + contingency;
+    const tax = taxableAmount * (project.taxPct / 100);
+    const gross = taxableAmount + tax;
     const discount = gross * ((project.discountPct || 0) / 100);
     const grandTotal = gross - discount;
 
     summaryData.push([]);
+    summaryData.push(["Project Subtotal", projectTotal]);
     if ((project.contingencyPct || 0) > 0) {
-        summaryData.push([`Contingency (${project.contingencyPct || 0}%)`, String(contingency)]);
+        summaryData.push([`Contingency (${project.contingencyPct || 0}%)`, contingency]);
     }
-    summaryData.push(["Tax", String(tax)]);
-    summaryData.push(["Grand Total Estimate", String(gross)]);
+    summaryData.push(["Tax", tax]);
+    summaryData.push(["Grand Total Estimate", gross]);
     
     if (discount > 0) {
-        summaryData.push([`Discount (${project.discountPct || 0}%)`, `-${String(discount)}`]);
-        summaryData.push(["Final Total", String(grandTotal)]);
+        summaryData.push([`Discount (${project.discountPct || 0}%)`, -discount]);
+        summaryData.push(["Final Total", grandTotal]);
     }
 
     const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
@@ -206,7 +193,7 @@ export const exportExcel = (project: Project) => {
     project.rooms.forEach(room => {
         let roomTotal = 0;
         room.items.forEach(item => {
-            const total = calcLine(item);
+            const total = calcLineTotal(item);
             roomTotal += total;
             const displayDescription = item.description || CATEGORY_DESCRIPTIONS[item.category] || item.category;
 
@@ -229,7 +216,7 @@ export const exportExcel = (project: Project) => {
 };
 
 export const exportWord = async (project: Project) => {
-    let projectSubtotal = 0;
+    let projectTotal = 0;
     const children: any[] = [];
 
     children.push(
@@ -255,23 +242,9 @@ export const exportWord = async (project: Project) => {
     for (const room of project.rooms) {
         let roomTotal = 0;
 
-        const roomParaChildren = [];
-        if (room.photo) {
-             const base64Data = room.photo.split(',')[1];
-             // Fix for docx ImageRun options type error by casting to any
-             roomParaChildren.push(
-                new ImageRun({
-                    data: Uint8Array.from(atob(base64Data), c => c.charCodeAt(0)),
-                    transformation: { width: 60, height: 60 },
-                } as any),
-                new TextRun({ text: "  ", size: 32 })
-             );
-        }
-        roomParaChildren.push(new TextRun({ text: room.name, bold: true, size: 28 }));
-
         children.push(
             new Paragraph({
-                children: roomParaChildren,
+                text: room.name,
                 heading: HeadingLevel.HEADING_2,
                 spacing: { before: 400, after: 100 },
                 border: { bottom: { color: "cccccc", space: 1, style: BorderStyle.SINGLE, size: 6 } }
@@ -291,7 +264,7 @@ export const exportWord = async (project: Project) => {
         const rows = [headerRow];
 
         room.items.forEach(item => {
-            const total = calcLine(item);
+            const total = calcLineTotal(item);
             roomTotal += total;
             
             const displayDescription = item.description || CATEGORY_DESCRIPTIONS[item.category] || item.category;
@@ -315,7 +288,7 @@ export const exportWord = async (project: Project) => {
             ]
         }));
 
-        projectSubtotal += roomTotal;
+        projectTotal += roomTotal;
 
         children.push(
             new Table({
@@ -325,16 +298,25 @@ export const exportWord = async (project: Project) => {
         );
     }
 
-    const contingency = projectSubtotal * ((project.contingencyPct || 0) / 100);
-    const tax = (projectSubtotal + contingency) * (project.taxPct / 100);
-    const gross = projectSubtotal + contingency + tax;
+    const contingency = projectTotal * ((project.contingencyPct || 0) / 100);
+    const taxableAmount = projectTotal + contingency;
+    const tax = taxableAmount * (project.taxPct / 100);
+    const gross = taxableAmount + tax;
     const discount = gross * ((project.discountPct || 0) / 100);
     const grandTotal = gross - discount;
 
     children.push(new Paragraph({ text: "", spacing: { before: 400 } })); 
     children.push(new Paragraph({ text: "Summary", heading: HeadingLevel.HEADING_2 }));
 
-    const summaryRows = [];
+    const summaryRows = [
+        new TableRow({
+            children: [
+                new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Project Subtotal", bold: true })] })] }),
+                new TableCell({ children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: formatMoney(projectTotal) })] })] })
+            ]
+        })
+    ];
+    
     if ((project.contingencyPct || 0) > 0) {
         summaryRows.push(
             new TableRow({
